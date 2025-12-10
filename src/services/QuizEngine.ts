@@ -7,9 +7,9 @@ export interface MatchResult {
 
 export class QuizEngine {
     private apiKey: string;
-    // Using gemini-1.5-flash for low latency responses
+    // Using gemini-pro which is widely available
     // Ensure correct API version and endpoint structure
-    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
 
     constructor() {
         this.apiKey = process.env.GOOGLE_API_KEY || '';
@@ -49,8 +49,11 @@ Answer:`;
                 body: JSON.stringify({
                     contents: [{
                         parts: [{ text: prompt }]
-                    }]
-                    // Remove generationConfig for now if it's causing issues, or verify support
+                    }],
+                    generationConfig: {
+                        temperature: 0.1, // Low temperature for deterministic answers
+                        maxOutputTokens: 20
+                    }
                 })
             });
 

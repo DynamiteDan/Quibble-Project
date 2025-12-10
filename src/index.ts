@@ -124,19 +124,25 @@ class ExampleMentraOSApp extends AppServer {
         // Since Gemini handles the logic, we trust its output
         
         // De-duplicate same answers if they come in sequence
-        if (match.question.answer !== lastAnswerId) { // Using answer text as ID effectively
-            console.log(`Match found: ${match.question.answer}`);
+        // TEMPORARY DEBUG: Removed check to force display update every time
+        // if (match.question.answer !== lastAnswerId) { 
+            console.log(`Match found: ${match.question.answer} (Confidence: ${match.confidence})`);
             
-            // Show question (input) on top, Answer on bottom
-            session.layouts.showDoubleTextWall({
-                topText: text.length > 50 ? "..." + text.substring(text.length - 50) : text,
-                bottomText: `Answer: ${match.question.answer}`
-            });
+            try {
+                // Show question (input) on top, Answer on bottom
+                session.layouts.showDoubleTextWall({
+                    topText: text.length > 50 ? "..." + text.substring(text.length - 50) : text,
+                    bottomText: `Answer: ${match.question.answer}`
+                });
+                console.log("Display updated successfully.");
+            } catch (err) {
+                console.error("Error updating display:", err);
+            }
             
             lastAnswerId = match.question.answer;
-        } else {
-             console.log(`Skipping duplicate answer: ${match.question.answer}`);
-        }
+        // } else {
+        //     console.log(`Skipping duplicate answer: ${match.question.answer}`);
+        // }
       } else {
          console.log("No match returned from QuizEngine.");
          if (showLiveTranscription) {
