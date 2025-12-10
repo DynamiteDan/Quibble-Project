@@ -76,6 +76,9 @@ class ExampleMentraOSApp extends AppServer {
     
     // State for smart interval processing
     let lastProcessedLength = 0;
+    
+    // Buffer to store accumulated transcript text across multiple utterances
+    let accumulatedTranscript = "";
 
     // Helper to reset the clear timer
     const resetClearTimer = () => {
@@ -87,6 +90,7 @@ class ExampleMentraOSApp extends AppServer {
             session.layouts.showTextWall("Quibble Ready."); 
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
+            accumulatedTranscript = ""; // Reset accumulated transcript
         }, 20000); // 20 seconds
     };
 
@@ -99,21 +103,28 @@ class ExampleMentraOSApp extends AppServer {
       resetClearTimer(); // Reset timer whenever we hear something
 
       const showLiveTranscription = session.settings.get<boolean>('show_live_transcription', true);
-
-      // Check if we started a new utterance (text length reset or dropped significantly)
-      if (text.length < lastProcessedLength) {
-          lastProcessedLength = 0;
+      
+      // Construct the full text with history. 
+      // If we have accumulated text, append the current text to it.
+      let fullText = accumulatedTranscript;
+      if (text && text.trim().length > 0) {
+          fullText = accumulatedTranscript ? `${accumulatedTranscript} ${text}` : text;
       }
+      
+      // Note: we removed the manual check for text.length < lastProcessedLength 
+      // because we are now using fullText which should strictly grow until reset.
 
       if (showLiveTranscription) {
         console.log(`Transcript received (Final: ${isFinal}):`, text);
+        console.log(`Full context:`, fullText);
+        
         // Show continuous transcription. If we have an answer, keep it visible.
         try {
             if (lastAnswerId) {
-                 const questionText = text.length > 50 ? "..." + text.substring(text.length - 50) : text;
+                 const questionText = fullText.length > 50 ? "..." + fullText.substring(fullText.length - 50) : fullText;
                  session.layouts.showDoubleTextWall(questionText, `Answer: ${lastAnswerId}`);
             } else {
-                 session.layouts.showTextWall(text);
+                 session.layouts.showTextWall(fullText);
             }
         } catch (err) {
             console.error("Error updating display:", err);
@@ -121,14 +132,14 @@ class ExampleMentraOSApp extends AppServer {
       }
 
       // Logic: 
-      // 1. Process if we detect a complete sentence (ending in punctuation).
+      // 1. Process if we detect a complete sentence (ending in punctuation) in the FULL text.
       // 2. Always process if it's Final (end of speech).
       
-      // Find the last sentence boundary
+      // Find the last sentence boundary in the full text
       const sentenceEndRegex = /[.?!](?:\s|$)/g;
       let lastMatchIndex = -1;
       let match;
-      while ((match = sentenceEndRegex.exec(text)) !== null) {
+      while ((match = sentenceEndRegex.exec(fullText)) !== null) {
           lastMatchIndex = match.index;
       }
 
@@ -139,14 +150,31 @@ class ExampleMentraOSApp extends AppServer {
           isFinal || 
           (currentSentenceEnd > lastProcessedLength);
 
+      // If isFinal is true, we need to commit the current text to accumulatedTranscript
+      // regardless of whether we process for Gemini or not.
+      if (isFinal) {
+          if (text && text.trim().length > 0) {
+            // Check if the "For 10 points" phrase is present.
+            // If so, we assume this is the end of the question and reset the history for the next one.
+            if (fullText.toLowerCase().includes("for 10 points")) {
+                console.log("Detected 'For 10 points'. Resetting accumulated history.");
+                accumulatedTranscript = "";
+                // Also reset the processed length so the next question starts fresh
+                lastProcessedLength = 0;
+            } else {
+                accumulatedTranscript = fullText; 
+            }
+          }
+      }
+
       if (!shouldProcess) return;
 
       // Update the checkpoint
-      lastProcessedLength = isFinal ? text.length : currentSentenceEnd;
+      lastProcessedLength = isFinal ? fullText.length : currentSentenceEnd;
 
       // Process with QuizEngine immediately (no debounce) for real-time buzzing
-      console.log(`Processing text for match (Length: ${text.length})...`);
-      const matchResult = await quizEngine.processText(text);
+      console.log(`Processing text for match (Length: ${fullText.length})...`);
+      const matchResult = await quizEngine.processText(fullText);
 
       if (matchResult) {
         // Since Gemini handles the logic, we trust its output
@@ -158,7 +186,7 @@ class ExampleMentraOSApp extends AppServer {
             try {
             // Show question (input) on top, Answer on bottom
             // Passing arguments directly as per SDK error (topText, bottomText)
-            const questionText = text.length > 50 ? "..." + text.substring(text.length - 50) : text;
+            const questionText = fullText.length > 50 ? "..." + fullText.substring(fullText.length - 50) : fullText;
             session.layouts.showDoubleTextWall(questionText, `Answer: ${matchResult.question.answer}`);
             console.log("Display updated successfully.");
             } catch (err) {
