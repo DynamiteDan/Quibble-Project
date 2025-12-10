@@ -109,7 +109,7 @@ class ExampleMentraOSApp extends AppServer {
       
       const shouldProcess = 
           isFinal || 
-          (text.length >= 100 && (text.length - lastProcessedLength >= 75));
+          (text.length >= 1 && (text.length - lastProcessedLength >= 75));
 
       if (!shouldProcess) return;
 
@@ -117,6 +117,7 @@ class ExampleMentraOSApp extends AppServer {
       lastProcessedLength = text.length;
 
       // Process with QuizEngine immediately (no debounce) for real-time buzzing
+      console.log(`Processing text for match (Length: ${text.length})...`);
       const match = await quizEngine.processText(text);
 
       if (match) {
@@ -133,10 +134,15 @@ class ExampleMentraOSApp extends AppServer {
             });
             
             lastAnswerId = match.question.answer;
+        } else {
+             console.log(`Skipping duplicate answer: ${match.question.answer}`);
         }
-      } else if (showLiveTranscription) {
-        // If no match yet, just show what the user is saying (if enabled)
-        session.layouts.showTextWall(text);
+      } else {
+         console.log("No match returned from QuizEngine.");
+         if (showLiveTranscription) {
+            // If no match yet, just show what the user is saying (if enabled)
+            session.layouts.showTextWall(text);
+         }
       }
     };
 

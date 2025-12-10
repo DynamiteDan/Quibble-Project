@@ -8,6 +8,7 @@ export interface MatchResult {
 export class QuizEngine {
     private apiKey: string;
     // Using gemini-1.5-flash for low latency responses
+    // Ensure correct API version and endpoint structure
     private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
     constructor() {
@@ -48,21 +49,22 @@ Answer:`;
                 body: JSON.stringify({
                     contents: [{
                         parts: [{ text: prompt }]
-                    }],
-                    generationConfig: {
-                        temperature: 0.1, // Low temperature for deterministic answers
-                        maxOutputTokens: 20
-                    }
+                    }]
+                    // Remove generationConfig for now if it's causing issues, or verify support
                 })
             });
 
             if (!response.ok) {
-                console.error(`Gemini API error: ${response.statusText}`);
+                console.error(`Gemini API error: ${response.status} ${response.statusText}`);
+                const errorBody = await response.text();
+                console.error(`Gemini Error Body: ${errorBody}`);
                 return null;
             }
 
             const data = await response.json() as any;
+            // console.log("Gemini Raw Response:", JSON.stringify(data)); // Uncomment for deep debugging
             const answerText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            console.log(`Gemini Answer: "${answerText}"`);
 
             if (!answerText || answerText === 'NO MATCH') {
                 return null;
