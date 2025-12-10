@@ -91,7 +91,7 @@ class ExampleMentraOSApp extends AppServer {
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
             accumulatedTranscript = ""; // Reset accumulated transcript
-        }, 20000); // 20 seconds
+        }, 3000); // 3 seconds
     };
 
     /**
