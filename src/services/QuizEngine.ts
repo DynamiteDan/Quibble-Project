@@ -8,7 +8,7 @@ export interface MatchResult {
 export class QuizEngine {
     private apiKey: string;
     // Using gemini-2.0-flash which is the stable version available in your model list
-    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent';
 
     constructor() {
         this.apiKey = process.env.GOOGLE_API_KEY || '';
@@ -33,17 +33,26 @@ export class QuizEngine {
 
         try {
             // Add 'answer' to system instruction to guide the model better
-            const prompt = `You are an expert quizbowl player. Your task is to identify the answer to the trivia clue provided.
+            const prompt = `You are an expert Quiz Bowl player and editor. Your task is to identify the precise answer (the "entity") to the trivia tossup clue provided.
+
+Context:
+- The input text is a stream of a "tossup" question being read aloud.
+- It may be incomplete or cut off mid-sentence.
+- Quiz Bowl questions are "pyramidal": they start with obscure clues and become easier.
+- The prompt often contains a pronoun or determinator indicating the answer type (e.g., "This **author** wrote...", "This **battle** saw...", "This **chemical element**...").
+
 Rules:
-1. Pay close attention to proper nouns (names, places) in the clue. They are the most important part.
-2. If you see "Robert Boisjoli" or "Alan MacDonald", the answer is almost certainly "Space Shuttle Challenger disaster" (or related).
-3. First, provide your reasoning step-by-step.
-4. Then, output the final answer entity prefixed with "ANSWER:".
-5. If the input is not a trivia clue or you are unsure, output "NO MATCH".
+1. Identify the entity type requested (e.g., Person, Place, Work, Event, Substance). The answer MUST match this type.
+   - Example: If the clue says "This novel...", the answer must be the novel's title, NOT the author.
+   - Example: If the clue says "This composer...", the answer must be the person, NOT one of their works.
+2. Use the proper nouns and facts provided to triangulate the specific answer.
+3. If the clue is too vague, generic, or short to identify a unique answer with high confidence (e.g., "This man was born in 1950..."), output "NO MATCH".
+4. Do NOT guess unless you are reasonably certain based on the specific combination of facts.
+5. Output "NO MATCH" if the input does not look like a quiz bowl question, or if you are unsure of the answer.
 
 Format:
-Reasoning: <your reasoning here>
-ANSWER: <Entity Name>
+Reasoning: <Brief step-by-step logic identifying the entity type and matching facts>
+ANSWER: <The concise entity name (e.g. "Abraham Lincoln", "The Great Gatsby", "Photosynthesis")>
 
 Clue: "${text}"`;
 
@@ -55,8 +64,8 @@ Clue: "${text}"`;
                         parts: [{ text: prompt }]
                     }],
                     generationConfig: {
-                        temperature: 0.3, // Slight increase to prevent mode collapse
-                        maxOutputTokens: 2000 // Allow more space
+                        temperature: 0.1, // Lower temperature for more deterministic/factual answers
+                        maxOutputTokens: 2000 
                     }
                 })
             });
