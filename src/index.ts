@@ -76,9 +76,18 @@ class ExampleMentraOSApp extends AppServer {
         // De-duplicate same answers if they come in sequence
         if (match.question.answer !== lastAnswerId) { // Using answer text as ID effectively
             console.log(`Match found: ${match.question.answer}`);
-            session.layouts.showTextWall(`Answer: ${match.question.answer}`);
+            
+            // Show question (input) on top, Answer on bottom
+            session.layouts.showDoubleTextWall({
+                topText: text.length > 50 ? "..." + text.substring(text.length - 50) : text,
+                bottomText: `Answer: ${match.question.answer}`
+            });
+            
             lastAnswerId = match.question.answer;
         }
+      } else if (showLiveTranscription) {
+        // If no match yet, just show what the user is saying (if enabled)
+        session.layouts.showTextWall(text);
       }
     };
 
