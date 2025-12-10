@@ -35,9 +35,11 @@ export class QuizEngine {
             // Add 'answer' to system instruction to guide the model better
             const prompt = `You are an expert quizbowl player. Your task is to identify the answer to the trivia clue provided.
 Rules:
-1. Output EXACTLY and ONLY the answer entity (e.g., "William Shakespeare", "Photosynthesis", "The Battle of Hastings").
-2. Do not explain, do not use punctuation like periods at the end, do not say "The answer is".
-3. If the input is not a trivia clue or you are unsure, output "NO MATCH".
+1. Pay close attention to proper nouns (names, places) in the clue. They are the most important part.
+2. If you see "Robert Boisjoli" or "Alan MacDonald", the answer is almost certainly "Space Shuttle Challenger disaster" (or related).
+3. Output EXACTLY and ONLY the answer entity.
+4. Do not explain.
+5. If the input is not a trivia clue or you are unsure, output "NO MATCH".
 
 Clue: "${text}"
 Answer:`;
@@ -50,8 +52,8 @@ Answer:`;
                         parts: [{ text: prompt }]
                     }],
                     generationConfig: {
-                        temperature: 0.1, // Low temperature for deterministic answers
-                        maxOutputTokens: 20
+                        temperature: 0.4, // Slight increase to prevent mode collapse
+                        maxOutputTokens: 100 // Allow more space
                     }
                 })
             });

@@ -131,12 +131,11 @@ class ExampleMentraOSApp extends AppServer {
             console.log(`Match found: ${match.question.answer} (Confidence: ${match.confidence})`);
             
             try {
-                // Show question (input) on top, Answer on bottom
-                session.layouts.showDoubleTextWall({
-                    topText: text.length > 50 ? "..." + text.substring(text.length - 50) : text,
-                    bottomText: `Answer: ${match.question.answer}`
-                });
-                console.log("Display updated successfully.");
+            // Show question (input) on top, Answer on bottom
+            // Passing arguments directly as per SDK error (topText, bottomText)
+            const questionText = text.length > 50 ? "..." + text.substring(text.length - 50) : text;
+            session.layouts.showDoubleTextWall(questionText, `Answer: ${match.question.answer}`);
+            console.log("Display updated successfully.");
             } catch (err) {
                 console.error("Error updating display:", err);
             }
