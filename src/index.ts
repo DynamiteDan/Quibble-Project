@@ -100,56 +100,78 @@ class ExampleMentraOSApp extends AppServer {
 
       const showLiveTranscription = session.settings.get<boolean>('show_live_transcription', true);
 
+      // Check if we started a new utterance (text length reset or dropped significantly)
+      if (text.length < lastProcessedLength) {
+          lastProcessedLength = 0;
+      }
+
       if (showLiveTranscription) {
         console.log(`Transcript received (Final: ${isFinal}):`, text);
+        // Show continuous transcription. If we have an answer, keep it visible.
+        try {
+            if (lastAnswerId) {
+                 const questionText = text.length > 50 ? "..." + text.substring(text.length - 50) : text;
+                 session.layouts.showDoubleTextWall(questionText, `Answer: ${lastAnswerId}`);
+            } else {
+                 session.layouts.showTextWall(text);
+            }
+        } catch (err) {
+            console.error("Error updating display:", err);
+        }
       }
 
       // Logic: 
-      // 1. Must be at least 100 characters to start.
-      // 2. After that, only process if we've added at least 75 characters since the last check.
-      // 3. Always process if it's Final (end of speech).
+      // 1. Process if we detect a complete sentence (ending in punctuation).
+      // 2. Always process if it's Final (end of speech).
       
+      // Find the last sentence boundary
+      const sentenceEndRegex = /[.?!](?:\s|$)/g;
+      let lastMatchIndex = -1;
+      let match;
+      while ((match = sentenceEndRegex.exec(text)) !== null) {
+          lastMatchIndex = match.index;
+      }
+
+      // Calculate the end position of the last complete sentence (include the punctuation)
+      const currentSentenceEnd = lastMatchIndex !== -1 ? lastMatchIndex + 1 : 0;
+
       const shouldProcess = 
           isFinal || 
-          (text.length >= 1 && (text.length - lastProcessedLength >= 75));
+          (currentSentenceEnd > lastProcessedLength);
 
       if (!shouldProcess) return;
 
       // Update the checkpoint
-      lastProcessedLength = text.length;
+      lastProcessedLength = isFinal ? text.length : currentSentenceEnd;
 
       // Process with QuizEngine immediately (no debounce) for real-time buzzing
       console.log(`Processing text for match (Length: ${text.length})...`);
-      const match = await quizEngine.processText(text);
+      const matchResult = await quizEngine.processText(text);
 
-      if (match) {
+      if (matchResult) {
         // Since Gemini handles the logic, we trust its output
         
         // De-duplicate same answers if they come in sequence
-        // TEMPORARY DEBUG: Removed check to force display update every time
-        // if (match.question.answer !== lastAnswerId) { 
-            console.log(`Match found: ${match.question.answer} (Confidence: ${match.confidence})`);
+        // if (matchResult.question.answer !== lastAnswerId) { 
+            console.log(`Match found: ${matchResult.question.answer} (Confidence: ${matchResult.confidence})`);
             
             try {
             // Show question (input) on top, Answer on bottom
             // Passing arguments directly as per SDK error (topText, bottomText)
             const questionText = text.length > 50 ? "..." + text.substring(text.length - 50) : text;
-            session.layouts.showDoubleTextWall(questionText, `Answer: ${match.question.answer}`);
+            session.layouts.showDoubleTextWall(questionText, `Answer: ${matchResult.question.answer}`);
             console.log("Display updated successfully.");
             } catch (err) {
                 console.error("Error updating display:", err);
             }
             
-            lastAnswerId = match.question.answer;
+            lastAnswerId = matchResult.question.answer;
         // } else {
-        //     console.log(`Skipping duplicate answer: ${match.question.answer}`);
+        //     console.log(`Skipping duplicate answer: ${matchResult.question.answer}`);
         // }
       } else {
          console.log("No match returned from QuizEngine.");
-         if (showLiveTranscription) {
-            // If no match yet, just show what the user is saying (if enabled)
-            session.layouts.showTextWall(text);
-         }
+         // We don't need to update display here because we updated it at the start
       }
     };
 
