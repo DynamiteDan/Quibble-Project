@@ -55,7 +55,7 @@ class ExampleMentraOSApp extends AppServer {
         session.layouts.showTextWall("Microphone not available. App is in read-only mode.");
     } else {
         // Show welcome message only if we have a display
-        session.layouts.showTextWall("Quibble Ready. Ask me a trivia question!");
+        session.layouts.showTextWall(" ");
     }
 
     // 2. Error Handling: specific to permissions
@@ -87,7 +87,7 @@ class ExampleMentraOSApp extends AppServer {
         clearDisplayTimer = setTimeout(() => {
             // session.layouts.clear() is not available in all SDK versions
             // Fallback: Show empty text wall or welcome message
-            session.layouts.clear();
+            session.layouts.showTextWall(" ");
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
             accumulatedTranscript = ""; // Reset accumulated transcript
