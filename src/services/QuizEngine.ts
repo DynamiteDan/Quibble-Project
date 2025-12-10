@@ -7,8 +7,8 @@ export interface MatchResult {
 
 export class QuizEngine {
     private apiKey: string;
-    // Using gemini-1.5-flash-latest which is often the safest alias for flash models
-    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
+    // Using gemini-2.0-flash which is the stable version available in your model list
+    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
     constructor() {
         this.apiKey = process.env.GOOGLE_API_KEY || '';

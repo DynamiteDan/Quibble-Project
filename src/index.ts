@@ -82,7 +82,9 @@ class ExampleMentraOSApp extends AppServer {
         if (clearDisplayTimer) clearTimeout(clearDisplayTimer);
         
         clearDisplayTimer = setTimeout(() => {
-            session.layouts.clear();
+            // session.layouts.clear() is not available in all SDK versions
+            // Fallback: Show empty text wall or welcome message
+            session.layouts.showTextWall("Quibble Ready."); 
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
         }, 20000); // 20 seconds
