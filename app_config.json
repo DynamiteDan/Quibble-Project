@@ -16,13 +16,18 @@
   ],
   "tools": [
     {
-      "id": "my_tool_name",
-      "description": "This is a tool that does something.",
+      "id": "emulate_input",
+      "description": "Simulate voice input for testing the storage engine.",
       "activationPhrases": [
-        "my tool name",
-        "use my tool"
+        "simulate input",
+        "test input"
       ],
-      "parameters": { }
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "The text to simulate as input"
+        }
+      }
     }
   ]
 }

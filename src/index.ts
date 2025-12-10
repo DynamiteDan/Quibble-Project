@@ -1,4 +1,5 @@
 import { ToolCall, AppServer, AppSession } from '@mentra/sdk';
+import { QuizEngine } from './services/QuizEngine';
 import path from 'path';
 import { setupExpressRoutes } from './webview';
 import { handleToolCall } from './tools';
@@ -41,28 +42,50 @@ class ExampleMentraOSApp extends AppServer {
    */
   protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
     this.userSessionsMap.set(userId, session);
+    const quizEngine = new QuizEngine();
 
     // Show welcome message
-    session.layouts.showTextWall("Example App loaded!");
+    session.layouts.showTextWall("Quibble Ready. Ask me a trivia question!");
+
+    // State for debounce/spam prevention
+    let lastAnswerId: string | null = null;
+    let lastBuzzTime = 0;
 
     /**
      * Handles transcription display based on settings
      * @param text - The transcription text to display
+     * @param isFinal - Whether the transcription is final
      */
-    const displayTranscription = (text: string): void => {
+    const handleTranscription = async (text: string, isFinal: boolean): Promise<void> => {
       const showLiveTranscription = session.settings.get<boolean>('show_live_transcription', true);
+
       if (showLiveTranscription) {
-        console.log("Transcript received:", text);
-        session.layouts.showTextWall("You said: " + text);
+        console.log(`Transcript received (Final: ${isFinal}):`, text);
+      }
+
+      // Optimization: Only call Gemini on final results or long pauses to save cost/latency
+      // OR call it if we have enough context.
+      // For now, let's strictly restrict to Final results or very long texts (buffer).
+      if (!isFinal && text.length < 30) return;
+
+      // Process with QuizEngine
+      const match = await quizEngine.processText(text);
+      if (match) {
+        // Since Gemini handles the logic, we trust its output
+        
+        // De-duplicate same answers if they come in sequence
+        if (match.question.answer !== lastAnswerId) { // Using answer text as ID effectively
+            console.log(`Match found: ${match.question.answer}`);
+            session.layouts.showTextWall(`Answer: ${match.question.answer}`);
+            lastAnswerId = match.question.answer;
+        }
       }
     };
 
     // Listen for transcriptions
     session.events.onTranscription((data) => {
-      if (data.isFinal) {
-        // Handle final transcription text
-        displayTranscription(data.text);
-      }
+      // We don't await here to avoid blocking the event loop
+      handleTranscription(data.text, data.isFinal).catch(console.error);
     });
 
     // Listen for setting changes to update transcription display behavior
