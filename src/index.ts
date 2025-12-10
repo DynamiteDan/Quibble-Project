@@ -87,7 +87,7 @@ class ExampleMentraOSApp extends AppServer {
         clearDisplayTimer = setTimeout(() => {
             // session.layouts.clear() is not available in all SDK versions
             // Fallback: Show empty text wall or welcome message
-            session.layouts.showTextWall(" "); 
+            session.layouts.clear();
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
             accumulatedTranscript = ""; // Reset accumulated transcript
