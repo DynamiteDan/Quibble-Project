@@ -41,9 +41,12 @@ class ExampleMentraOSApp extends AppServer {
    * @param userId - User identifier
    */
   protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
+    console.log(`[DEBUG] onSession triggered for session ${sessionId}`);
     this.userSessionsMap.set(userId, session);
 
     // 1. Capability Check: Ensure device has required hardware
+    console.log(`[DEBUG] Session capabilities:`, JSON.stringify(session.capabilities));
+    
     if (!session.capabilities?.hasDisplay) {
         console.warn("Device does not have a display. Quibble requires a display.");
         return;
@@ -55,7 +58,8 @@ class ExampleMentraOSApp extends AppServer {
         session.layouts.showTextWall("Microphone not available. App is in read-only mode.");
     } else {
         // Show welcome message only if we have a display
-        session.layouts.showTextWall(" ");
+        console.log("[DEBUG] Displaying welcome message...");
+        session.layouts.showTextWall("Quibble Ready.");
     }
 
     // 2. Error Handling: specific to permissions
