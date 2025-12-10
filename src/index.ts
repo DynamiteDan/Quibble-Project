@@ -42,10 +42,32 @@ class ExampleMentraOSApp extends AppServer {
    */
   protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
     this.userSessionsMap.set(userId, session);
+
+    // 1. Capability Check: Ensure device has required hardware
+    if (!session.capabilities?.hasDisplay) {
+        console.warn("Device does not have a display. Quibble requires a display.");
+        return;
+    }
+    
+    if (!session.capabilities?.hasMicrophone) {
+        console.warn("Device does not have a microphone. Quibble requires a microphone.");
+        // We can still show the UI but active listening won't work
+        session.layouts.showTextWall("Microphone not available. App is in read-only mode.");
+    } else {
+        // Show welcome message only if we have a display
+        session.layouts.showTextWall("Quibble Ready. Ask me a trivia question!");
+    }
+
+    // 2. Error Handling: specific to permissions
+    session.events.on('error', (error: any) => {
+        console.error("Session error:", error);
+        if (error.code === 'PERMISSION_DENIED' || error.message?.includes('permission')) {
+            session.layouts.showTextWall("Microphone permission denied. Please enable it in settings.");
+        }
+    });
+
     const quizEngine = new QuizEngine();
 
-    // Show welcome message
-    session.layouts.showTextWall("Quibble Ready. Ask me a trivia question!");
 
     // State for debounce/spam prevention
     let lastAnswerId: string | null = null;
