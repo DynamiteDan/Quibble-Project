@@ -69,9 +69,24 @@ class ExampleMentraOSApp extends AppServer {
     const quizEngine = new QuizEngine();
 
 
-    // State for debounce/spam prevention
+    // State for debounce/spam prevention and display timeout
     let lastAnswerId: string | null = null;
     let lastBuzzTime = 0;
+    let clearDisplayTimer: NodeJS.Timeout | null = null;
+    
+    // State for smart interval processing
+    let lastProcessedLength = 0;
+
+    // Helper to reset the clear timer
+    const resetClearTimer = () => {
+        if (clearDisplayTimer) clearTimeout(clearDisplayTimer);
+        
+        clearDisplayTimer = setTimeout(() => {
+            session.layouts.clear();
+            lastAnswerId = null; // Reset state so same answer can trigger again if needed
+            lastProcessedLength = 0; // Reset length tracking
+        }, 20000); // 20 seconds
+    };
 
     /**
      * Handles transcription display based on settings
@@ -79,19 +94,31 @@ class ExampleMentraOSApp extends AppServer {
      * @param isFinal - Whether the transcription is final
      */
     const handleTranscription = async (text: string, isFinal: boolean): Promise<void> => {
+      resetClearTimer(); // Reset timer whenever we hear something
+
       const showLiveTranscription = session.settings.get<boolean>('show_live_transcription', true);
 
       if (showLiveTranscription) {
         console.log(`Transcript received (Final: ${isFinal}):`, text);
       }
 
-      // Optimization: Only call Gemini on final results or long pauses to save cost/latency
-      // OR call it if we have enough context.
-      // For now, let's strictly restrict to Final results or very long texts (buffer).
-      if (!isFinal && text.length < 30) return;
+      // Logic: 
+      // 1. Must be at least 100 characters to start.
+      // 2. After that, only process if we've added at least 75 characters since the last check.
+      // 3. Always process if it's Final (end of speech).
+      
+      const shouldProcess = 
+          isFinal || 
+          (text.length >= 100 && (text.length - lastProcessedLength >= 75));
 
-      // Process with QuizEngine
+      if (!shouldProcess) return;
+
+      // Update the checkpoint
+      lastProcessedLength = text.length;
+
+      // Process with QuizEngine immediately (no debounce) for real-time buzzing
       const match = await quizEngine.processText(text);
+
       if (match) {
         // Since Gemini handles the logic, we trust its output
         
@@ -133,7 +160,10 @@ class ExampleMentraOSApp extends AppServer {
     );
 
     // automatically remove the session when the session ends
-    this.addCleanupHandler(() => this.userSessionsMap.delete(userId));
+    this.addCleanupHandler(() => {
+        if (clearDisplayTimer) clearTimeout(clearDisplayTimer);
+        this.userSessionsMap.delete(userId);
+    });
   }
 }
 

@@ -32,6 +32,7 @@ export class QuizEngine {
         }
 
         try {
+            // Add 'answer' to system instruction to guide the model better
             const prompt = `You are an expert quizbowl player. Your task is to identify the answer to the trivia clue provided.
 Rules:
 1. Output EXACTLY and ONLY the answer entity (e.g., "William Shakespeare", "Photosynthesis", "The Battle of Hastings").
