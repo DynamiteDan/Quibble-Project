@@ -37,12 +37,15 @@ export class QuizEngine {
 Rules:
 1. Pay close attention to proper nouns (names, places) in the clue. They are the most important part.
 2. If you see "Robert Boisjoli" or "Alan MacDonald", the answer is almost certainly "Space Shuttle Challenger disaster" (or related).
-3. Output EXACTLY and ONLY the answer entity.
-4. Do not explain.
+3. First, provide your reasoning step-by-step.
+4. Then, output the final answer entity prefixed with "ANSWER:".
 5. If the input is not a trivia clue or you are unsure, output "NO MATCH".
 
-Clue: "${text}"
-Answer:`;
+Format:
+Reasoning: <your reasoning here>
+ANSWER: <Entity Name>
+
+Clue: "${text}"`;
 
             const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
                 method: 'POST',
@@ -52,8 +55,8 @@ Answer:`;
                         parts: [{ text: prompt }]
                     }],
                     generationConfig: {
-                        temperature: 0.4, // Slight increase to prevent mode collapse
-                        maxOutputTokens: 100 // Allow more space
+                        temperature: 0.3, // Slight increase to prevent mode collapse
+                        maxOutputTokens: 2000 // Allow more space
                     }
                 })
             });
@@ -67,11 +70,24 @@ Answer:`;
 
             const data = await response.json() as any;
             // console.log("Gemini Raw Response:", JSON.stringify(data)); // Uncomment for deep debugging
-            const answerText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            console.log(`Gemini Answer: "${answerText}"`);
+            const contentText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            console.log(`Gemini Full Response: "${contentText}"`);
 
-            if (!answerText || answerText === 'NO MATCH') {
+            if (!contentText || contentText.includes('NO MATCH')) {
                 return null;
+            }
+
+            // Parse reasoning and answer
+            let answerText = contentText;
+            const answerMatch = contentText.match(/ANSWER:\s*(.+)/i);
+            if (answerMatch) {
+                answerText = answerMatch[1].trim();
+            } else {
+                // Fallback if format isn't perfect
+                console.warn("Could not parse ANSWER: tag, using full text or skipping.");
+                // If it's long (reasoning included) but no tag, we might want to skip or try to infer.
+                // For safety, if no ANSWER tag, assume NO MATCH or just return the text if it's short.
+                if (contentText.length > 50) return null; 
             }
 
             // Synthesize a Question object for the app compatibility
