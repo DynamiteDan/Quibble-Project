@@ -10,11 +10,31 @@ export class QuizEngine {
     private baseUrl: string;
     private model: string;
 
+    private async callOpenAIChat(systemPrompt: string, userPrompt: string, model: string): Promise<Response> {
+        return fetch(`${this.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`,
+            },
+            body: JSON.stringify({
+                model,
+                temperature: 0.1, // Lower temperature for more deterministic/factual answers
+                max_tokens: 600,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+            }),
+        });
+    }
+
     constructor() {
         this.apiKey = process.env.OPENAI_API_KEY || '';
         this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-        // User requested "ChatGPT 5.2" — keep this default but allow overriding via env var.
-        this.model = process.env.OPENAI_MODEL || 'gpt-5.2';
+        // Prefer the "instant" tier by default, but allow overriding via env var.
+        // If your account doesn't have this model, we'll automatically fall back to 'gpt-5.2'.
+        this.model = process.env.OPENAI_MODEL || 'gpt-5.2-instant';
         if (!this.apiKey) {
             console.warn("OPENAI_API_KEY is not set. QuizEngine will not function correctly.");
         }
@@ -60,22 +80,25 @@ ANSWER: <The concise entity name (e.g. "Abraham Lincoln", "The Great Gatsby", "P
             const userPrompt = `Clue: "${text}"`;
 
             // Use OpenAI Chat Completions for broad compatibility.
-            const response = await fetch(`${this.baseUrl}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: this.model,
-                    temperature: 0.1, // Lower temperature for more deterministic/factual answers
-                    max_tokens: 600,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt },
-                    ],
-                })
-            });
+            // If the configured model isn't available, fall back to gpt-5.2 once.
+            let response = await this.callOpenAIChat(systemPrompt, userPrompt, this.model);
+            if (!response.ok) {
+                const errorBody = await response.text();
+                const looksLikeModelIssue =
+                    response.status === 400 ||
+                    response.status === 404 ||
+                    errorBody.toLowerCase().includes('model') ||
+                    errorBody.toLowerCase().includes('not found');
+
+                if (looksLikeModelIssue && this.model !== 'gpt-5.2') {
+                    console.warn(`Model '${this.model}' failed; retrying with 'gpt-5.2'.`);
+                    response = await this.callOpenAIChat(systemPrompt, userPrompt, 'gpt-5.2');
+                } else {
+                    console.error(`OpenAI API error: ${response.status} ${response.statusText}`);
+                    console.error(`OpenAI Error Body: ${errorBody}`);
+                    return null;
+                }
+            }
 
             if (!response.ok) {
                 console.error(`OpenAI API error: ${response.status} ${response.statusText}`);
