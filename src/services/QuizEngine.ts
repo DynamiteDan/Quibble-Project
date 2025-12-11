@@ -34,7 +34,7 @@ export class QuizEngine {
         this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
         // Prefer the "instant" tier by default, but allow overriding via env var.
         // If your account doesn't have this model, we'll automatically fall back to 'gpt-5.2'.
-        this.model = process.env.OPENAI_MODEL || 'gpt-5.2-instant';
+        this.model = process.env.OPENAI_MODEL || 'gpt-5.2-chat-latest';
         if (!this.apiKey) {
             console.warn("OPENAI_API_KEY is not set. QuizEngine will not function correctly.");
         }
@@ -64,17 +64,26 @@ Context:
 - The prompt often contains a pronoun or determinator indicating the answer type (e.g., "This **author** wrote...", "This **battle** saw...", "This **chemical element**...").
 
 Rules:
-1. Identify the entity type requested (e.g., Person, Place, Work, Event, Substance). The answer MUST match this type.
-   - Example: If the clue says "This novel...", the answer must be the novel's title, NOT the author.
-   - Example: If the clue says "This composer...", the answer must be the person, NOT one of their works.
-2. Use the proper nouns and facts provided to triangulate the specific answer.
-3. If the clue is too vague, generic, or short to identify a unique answer with high confidence (e.g., "This man was born in 1950..."), output "NO MATCH".
-4. Do NOT guess unless you are reasonably certain based on the specific combination of facts.
-5. Output "NO MATCH" if the input does not look like a quiz bowl question, or if you are unsure of the answer.
+1. Determine the requested answer type (Person, Place, Work, Event, Concept, Substance, etc.) from wording like "This author...", "This novel...", "This battle...", etc.
+2. The answer MUST match that type.
+   - If it says "This novel...", answer the novel title (not the author).
+   - If it says "This composer...", answer the person (not a work).
+3. Use the specific combination of named entities and facts to identify the single best answer.
+4. If the clue is incomplete/too vague, has multiple plausible answers, or you are not highly confident: output NO MATCH.
+5. If the input does not resemble a quiz bowl tossup clue: output NO MATCH.
 
-Format:
-Reasoning: <Brief step-by-step logic identifying the entity type and matching facts>
-ANSWER: <The concise entity name (e.g. "Abraham Lincoln", "The Great Gatsby", "Photosynthesis")>
+Output requirements (critical):
+- Output EXACTLY one line.
+- Either: NO MATCH
+- Or: ANSWER: <entity name>
+- Do NOT include reasoning, quotes, markdown, or extra text.
+
+Examples:
+Clue: "This novel begins with the line 'Call me Ishmael'..."
+ANSWER: Moby-Dick
+
+Clue: "This man was born in 1950 and later became famous."
+NO MATCH
 `;
 
             const userPrompt = `Clue: "${text}"`;
@@ -109,7 +118,11 @@ ANSWER: <The concise entity name (e.g. "Abraham Lincoln", "The Great Gatsby", "P
 
             const data = await response.json() as any;
             // console.log("OpenAI Raw Response:", JSON.stringify(data)); // Uncomment for deep debugging
-            const contentText = data.choices?.[0]?.message?.content?.trim();
+            const rawText = data.choices?.[0]?.message?.content?.trim();
+            const contentText = rawText
+                ?.replace(/```[\s\S]*?```/g, (m: string) => m.replace(/```/g, '').trim()) // strip fenced blocks if any
+                ?.replace(/^["'`]+|["'`]+$/g, '') // strip wrapping quotes/backticks
+                ?.trim();
             console.log(`OpenAI Full Response: "${contentText}"`);
 
             if (!contentText || contentText.includes('NO MATCH')) {
@@ -118,7 +131,7 @@ ANSWER: <The concise entity name (e.g. "Abraham Lincoln", "The Great Gatsby", "P
 
             // Parse reasoning and answer
             let answerText = contentText;
-            const answerMatch = contentText.match(/ANSWER:\s*(.+)/i);
+            const answerMatch = contentText.match(/^ANSWER:\s*(.+)\s*$/im);
             if (answerMatch) {
                 answerText = answerMatch[1].trim();
             } else {
