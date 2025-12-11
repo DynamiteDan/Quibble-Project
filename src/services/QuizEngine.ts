@@ -10,7 +10,12 @@ export class QuizEngine {
     private baseUrl: string;
     private model: string;
 
-    private async callOpenAIChat(systemPrompt: string, userPrompt: string, model: string): Promise<Response> {
+    private async callOpenAIChat(
+        systemPrompt: string,
+        userPrompt: string,
+        model: string,
+        tokenParam: 'max_completion_tokens' | 'max_tokens' = 'max_completion_tokens'
+    ): Promise<Response> {
         return fetch(`${this.baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -20,7 +25,7 @@ export class QuizEngine {
             body: JSON.stringify({
                 model,
                 temperature: 0.1, // Lower temperature for more deterministic/factual answers
-                max_tokens: 600,
+                [tokenParam]: 600,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt },
@@ -90,21 +95,41 @@ NO MATCH
 
             // Use OpenAI Chat Completions for broad compatibility.
             // If the configured model isn't available, fall back to gpt-5.2 once.
-            let response = await this.callOpenAIChat(systemPrompt, userPrompt, this.model);
+            let response = await this.callOpenAIChat(systemPrompt, userPrompt, this.model, 'max_completion_tokens');
             if (!response.ok) {
                 const errorBody = await response.text();
+                const errorBodyLower = errorBody.toLowerCase();
                 const looksLikeModelIssue =
                     response.status === 400 ||
                     response.status === 404 ||
-                    errorBody.toLowerCase().includes('model') ||
-                    errorBody.toLowerCase().includes('not found');
+                    errorBodyLower.includes('model') ||
+                    errorBodyLower.includes('not found');
 
-                if (looksLikeModelIssue && this.model !== 'gpt-5.2') {
+                // Some models use max_completion_tokens instead of max_tokens (and vice versa).
+                // If we hit that specific error, retry once with the alternate parameter.
+                if (
+                    response.status === 400 &&
+                    (errorBodyLower.includes("unsupported parameter") || errorBodyLower.includes("unsupported_parameter")) &&
+                    (errorBodyLower.includes("max_tokens") || errorBodyLower.includes("max_completion_tokens"))
+                ) {
+                    const retryTokenParam: 'max_completion_tokens' | 'max_tokens' =
+                        errorBodyLower.includes("use 'max_completion_tokens'") ? 'max_completion_tokens' : 'max_tokens';
+                    console.warn(`Retrying OpenAI request using '${retryTokenParam}'...`);
+                    response = await this.callOpenAIChat(systemPrompt, userPrompt, this.model, retryTokenParam);
+                } else if (looksLikeModelIssue && this.model !== 'gpt-5.2') {
                     console.warn(`Model '${this.model}' failed; retrying with 'gpt-5.2'.`);
-                    response = await this.callOpenAIChat(systemPrompt, userPrompt, 'gpt-5.2');
+                    response = await this.callOpenAIChat(systemPrompt, userPrompt, 'gpt-5.2', 'max_completion_tokens');
                 } else {
                     console.error(`OpenAI API error: ${response.status} ${response.statusText}`);
                     console.error(`OpenAI Error Body: ${errorBody}`);
+                    return null;
+                }
+
+                // If the retry also failed, log the latest response body for debugging.
+                if (!response.ok) {
+                    console.error(`OpenAI API error: ${response.status} ${response.statusText}`);
+                    const retryErrorBody = await response.text();
+                    console.error(`OpenAI Error Body: ${retryErrorBody}`);
                     return null;
                 }
             }
