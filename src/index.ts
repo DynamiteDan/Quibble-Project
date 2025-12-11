@@ -102,6 +102,14 @@ class ExampleMentraOSApp extends AppServer {
         }, 3000); // 3 seconds
     };
 
+    // Keep the display readable: show a sliding window of the latest characters.
+    // This makes long transcriptions "scroll" as they grow.
+    const windowText = (s: string, maxChars = 200): string => {
+        const text = (s ?? '').trim();
+        if (text.length <= maxChars) return text;
+        return `…${text.slice(text.length - maxChars)}`;
+    };
+
     /**
      * Handles transcription display based on settings
      * @param text - The transcription text to display
@@ -128,11 +136,11 @@ class ExampleMentraOSApp extends AppServer {
         
         // Show continuous transcription. If we have an answer, keep it visible.
         try {
+            const displayText = windowText(fullText, 200);
             if (lastAnswerId) {
-                 const questionText = fullText.length > 50 ? "..." + fullText.substring(fullText.length - 50) : fullText;
-                 session.layouts.showDoubleTextWall(questionText, `Answer: ${lastAnswerId}`);
+                 session.layouts.showDoubleTextWall(displayText, `Answer: ${lastAnswerId}`);
             } else {
-                 session.layouts.showTextWall(fullText);
+                 session.layouts.showTextWall(displayText);
             }
         } catch (err) {
             console.error("Error updating display:", err);
@@ -207,7 +215,7 @@ class ExampleMentraOSApp extends AppServer {
             try {
             // Show question (input) on top, Answer on bottom
             // Passing arguments directly as per SDK error (topText, bottomText)
-            const questionText = fullText.length > 50 ? "..." + fullText.substring(fullText.length - 50) : fullText;
+            const questionText = windowText(fullText, 200);
             session.layouts.showDoubleTextWall(questionText, `Answer: ${matchResult.question.answer}`);
             console.log("Display updated successfully.");
             
