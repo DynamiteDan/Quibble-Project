@@ -1,4 +1,4 @@
-import { QUESTIONS, Question } from '../data/questions';
+import { Question } from '../data/questions';
 
 export interface MatchResult {
     question: Question;
@@ -7,18 +7,21 @@ export interface MatchResult {
 
 export class QuizEngine {
     private apiKey: string;
-    // Using gemini-2.0-flash which is the stable version available in your model list
-    private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent';
+    private baseUrl: string;
+    private model: string;
 
     constructor() {
-        this.apiKey = process.env.GOOGLE_API_KEY || '';
+        this.apiKey = process.env.OPENAI_API_KEY || '';
+        this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+        // User requested "ChatGPT 5.2" — keep this default but allow overriding via env var.
+        this.model = process.env.OPENAI_MODEL || 'gpt-5.2';
         if (!this.apiKey) {
-            console.warn("GOOGLE_API_KEY is not set. QuizEngine will not function correctly.");
+            console.warn("OPENAI_API_KEY is not set. QuizEngine will not function correctly.");
         }
     }
 
     /**
-     * Processes input text to find a matching trivia question using Gemini
+     * Processes input text to find a matching trivia question using ChatGPT (OpenAI)
      * @param text The transcribed text or simulated input
      * @returns The best matching result or null if no strong match found
      */
@@ -27,13 +30,12 @@ export class QuizEngine {
         if (!text || text.trim().length < 10) return null;
         
         if (!this.apiKey) {
-            console.error("Missing GOOGLE_API_KEY");
+            console.error("Missing OPENAI_API_KEY");
             return null;
         }
 
         try {
-            // Add 'answer' to system instruction to guide the model better
-            const prompt = `You are an expert Quiz Bowl player and editor. Your task is to identify the precise answer (the "entity") to the trivia tossup clue provided.
+            const systemPrompt = `You are an expert Quiz Bowl player and editor. Your task is to identify the precise answer (the "entity") to the trivia tossup clue provided.
 
 Context:
 - The input text is a stream of a "tossup" question being read aloud.
@@ -53,34 +55,39 @@ Rules:
 Format:
 Reasoning: <Brief step-by-step logic identifying the entity type and matching facts>
 ANSWER: <The concise entity name (e.g. "Abraham Lincoln", "The Great Gatsby", "Photosynthesis")>
+`;
 
-Clue: "${text}"`;
+            const userPrompt = `Clue: "${text}"`;
 
-            const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
+            // Use OpenAI Chat Completions for broad compatibility.
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`,
+                },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [{ text: prompt }]
-                    }],
-                    generationConfig: {
-                        temperature: 0.1, // Lower temperature for more deterministic/factual answers
-                        maxOutputTokens: 2000 
-                    }
+                    model: this.model,
+                    temperature: 0.1, // Lower temperature for more deterministic/factual answers
+                    max_tokens: 600,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt },
+                    ],
                 })
             });
 
             if (!response.ok) {
-                console.error(`Gemini API error: ${response.status} ${response.statusText}`);
+                console.error(`OpenAI API error: ${response.status} ${response.statusText}`);
                 const errorBody = await response.text();
-                console.error(`Gemini Error Body: ${errorBody}`);
+                console.error(`OpenAI Error Body: ${errorBody}`);
                 return null;
             }
 
             const data = await response.json() as any;
-            // console.log("Gemini Raw Response:", JSON.stringify(data)); // Uncomment for deep debugging
-            const contentText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            console.log(`Gemini Full Response: "${contentText}"`);
+            // console.log("OpenAI Raw Response:", JSON.stringify(data)); // Uncomment for deep debugging
+            const contentText = data.choices?.[0]?.message?.content?.trim();
+            console.log(`OpenAI Full Response: "${contentText}"`);
 
             if (!contentText || contentText.includes('NO MATCH')) {
                 return null;
@@ -101,7 +108,7 @@ Clue: "${text}"`;
 
             // Synthesize a Question object for the app compatibility
             const question: Question = {
-                id: 'gemini-generated',
+                id: 'openai-generated',
                 category: 'General Knowledge',
                 text: text,
                 answer: answerText,
@@ -114,7 +121,7 @@ Clue: "${text}"`;
             };
 
         } catch (error) {
-            console.error("Error calling Gemini API:", error);
+            console.error("Error calling OpenAI API:", error);
             return null;
         }
     }

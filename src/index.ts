@@ -83,6 +83,9 @@ class ExampleMentraOSApp extends AppServer {
     
     // Buffer to store accumulated transcript text across multiple utterances
     let accumulatedTranscript = "";
+    
+    // Track when the screen was last cleared/reset to invalidate pending LLM results
+    let lastResetTimestamp = 0;
 
     // Helper to reset the clear timer
     const resetClearTimer = () => {
@@ -95,6 +98,7 @@ class ExampleMentraOSApp extends AppServer {
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
             accumulatedTranscript = ""; // Reset accumulated transcript
+            lastResetTimestamp = Date.now(); // Mark the reset time
         }, 3000); // 3 seconds
     };
 
@@ -150,12 +154,17 @@ class ExampleMentraOSApp extends AppServer {
       // Calculate the end position of the last complete sentence (include the punctuation)
       const currentSentenceEnd = lastMatchIndex !== -1 ? lastMatchIndex + 1 : 0;
 
-      const shouldProcess = 
-          isFinal || 
-          (currentSentenceEnd > lastProcessedLength);
+      // Only process if:
+      // 1. We have a new complete sentence that extends beyond what we processed before.
+      // 2. OR isFinal is true AND we have added significant content (> 5 chars) since the last process.
+      //    This prevents re-processing the same sentence just because isFinal turned true.
+      const hasNewSentence = currentSentenceEnd > lastProcessedLength;
+      const isFinalWithNewContent = isFinal && (fullText.length > lastProcessedLength + 5);
+
+      const shouldProcess = hasNewSentence || isFinalWithNewContent;
 
       // If isFinal is true, we need to commit the current text to accumulatedTranscript
-      // regardless of whether we process for Gemini or not.
+      // regardless of whether we process for the LLM or not.
       if (isFinal) {
           if (text && text.trim().length > 0) {
             // Check if the "For 10 points" phrase is present.
@@ -177,11 +186,19 @@ class ExampleMentraOSApp extends AppServer {
       lastProcessedLength = isFinal ? fullText.length : currentSentenceEnd;
 
       // Process with QuizEngine immediately (no debounce) for real-time buzzing
-      console.log(`Processing text for match (Length: ${fullText.length})...`);
+      console.log(`Processing text for match (Reason: ${hasNewSentence ? 'New Sentence' : 'Final Segment'}, Length: ${fullText.length})...`);
+      
+      const processStartTime = Date.now();
       const matchResult = await quizEngine.processText(fullText);
 
+      // Check if a reset occurred while we were awaiting the result
+      if (lastResetTimestamp > processStartTime) {
+          console.log("Discarding match result because session was reset while processing.");
+          return;
+      }
+
       if (matchResult) {
-        // Since Gemini handles the logic, we trust its output
+        // Since the LLM handles the logic, we trust its output
         
         // De-duplicate same answers if they come in sequence
         // if (matchResult.question.answer !== lastAnswerId) { 
@@ -193,6 +210,10 @@ class ExampleMentraOSApp extends AppServer {
             const questionText = fullText.length > 50 ? "..." + fullText.substring(fullText.length - 50) : fullText;
             session.layouts.showDoubleTextWall(questionText, `Answer: ${matchResult.question.answer}`);
             console.log("Display updated successfully.");
+            
+            // Keep the answer visible by resetting the clear timer
+            resetClearTimer();
+
             } catch (err) {
                 console.error("Error updating display:", err);
             }
