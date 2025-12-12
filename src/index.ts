@@ -206,6 +206,21 @@ class ExampleMentraOSApp extends AppServer {
       }
 
       if (matchResult) {
+        // Special control signal: clear transcript/history if the LLM says the input isn't a tossup at all.
+        if (matchResult.question.answer === '__RESET__' || matchResult.question.id === 'reset') {
+            console.log("Received RESET signal from QuizEngine; clearing transcript history.");
+            lastAnswerId = null;
+            lastProcessedLength = 0;
+            accumulatedTranscript = "";
+            lastResetTimestamp = Date.now();
+            try {
+                session.layouts.showTextWall(" ");
+            } catch (err) {
+                console.error("Error clearing display:", err);
+            }
+            return;
+        }
+
         // Since the LLM handles the logic, we trust its output
         
         // De-duplicate same answers if they come in sequence

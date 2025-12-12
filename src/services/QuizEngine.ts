@@ -73,13 +73,19 @@ Rules:
 2. The answer MUST match that type.
    - If it says "This novel...", answer the novel title (not the author).
    - If it says "This composer...", answer the person (not a work).
-3. Use the specific combination of named entities and facts to identify the single best answer.
-4. If the clue is incomplete/too vague, has multiple plausible answers, or you are not highly confident: output NO MATCH.
-5. If the input does not resemble a quiz bowl tossup clue: output NO MATCH.
+3. The transcript may be noisy and may include unrelated cross-talk during the question.
+   - FIRST: mentally filter the transcript to keep ONLY the parts that look like a quiz bowl clue (single-topic factual statements, "This X..." constructions, or clue-like proper nouns/facts).
+   - Ignore filler (uh/um), side comments, jokes, instructions, audience chatter, or off-topic sentences.
+   - Then answer using ONLY the filtered clue text.
+4. Use the specific combination of named entities and facts in the filtered clue to identify the single best answer.
+5. If, after filtering, there is not enough clue signal to identify one answer with high confidence: output NO MATCH.
+6. If the input does not resemble a quiz bowl tossup clue at all (even after filtering), output RESET (this is used to clear transcript history).
+7. Only output RESET if you are absolutely certain that the input is not a quiz bowl tossup clue.
 
 Output requirements (critical):
 - Output EXACTLY one line.
 - Either: NO MATCH
+- Or: RESET
 - Or: ANSWER: <entity name>
 - Do NOT include reasoning, quotes, markdown, or extra text.
 
@@ -89,6 +95,9 @@ ANSWER: Moby-Dick
 
 Clue: "This man was born in 1950 and later became famous."
 NO MATCH
+
+Clue: "Wait what did you say? haha yeah anyway let's go. Are we leaving?"
+RESET
 `;
 
             const userPrompt = `Clue: "${text}"`;
@@ -150,11 +159,25 @@ NO MATCH
                 ?.trim();
             console.log(`OpenAI Full Response: "${contentText}"`);
 
-            if (!contentText || contentText.includes('NO MATCH')) {
+            if (!contentText) {
                 return null;
             }
 
             // Parse reasoning and answer
+            const upper = contentText.toUpperCase();
+            if (upper === 'NO MATCH') return null;
+
+            if (upper === 'RESET') {
+                const question: Question = {
+                    id: 'reset',
+                    category: 'Control',
+                    text,
+                    answer: '__RESET__',
+                    keywords: [],
+                };
+                return { question, confidence: 0 };
+            }
+
             let answerText = contentText;
             const answerMatch = contentText.match(/^ANSWER:\s*(.+)\s*$/im);
             if (answerMatch) {
