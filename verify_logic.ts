@@ -13,14 +13,28 @@ const testCases = [
 
 console.log("Running QuizEngine Tests...\n");
 
-for (const text of testCases) {
-    console.log(`Input: "${text}"`);
-    const match = engine.processText(text);
-    if (match) {
-        console.log(`  MATCH: ${match.question.id} -> ${match.question.text}`);
-        console.log(`         Answer: ${match.question.answer} (Score: ${match.confidence.toFixed(2)})`);
-    } else {
-        console.log(`  NO MATCH`);
+(async () => {
+    for (const text of testCases) {
+        console.log(`Input: "${text}"`);
+        const match = await engine.processText(text, {
+            clueSoFar: '',
+            recentSegment: text,
+            alreadyAnswered: false,
+            lastAnswer: null,
+        });
+        if (match && match.action === 'answer') {
+            console.log(`  MATCH: ${match.question.id} -> ${match.question.text}`);
+            console.log(`         Answer: ${match.question.answer} (Score: ${match.confidence.toFixed(2)})`);
+        } else if (match && match.action === 'reset') {
+            console.log(`  RESET`);
+        } else if (match && match.action === 'chatter') {
+            console.log(`  CHATTER`);
+        } else {
+            console.log(`  NO MATCH`);
+        }
+        console.log("---");
     }
-    console.log("---");
-}
+})().catch((err) => {
+    console.error("verify_logic failed:", err);
+    process.exitCode = 1;
+});

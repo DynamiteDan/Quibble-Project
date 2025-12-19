@@ -83,6 +83,8 @@ class ExampleMentraOSApp extends AppServer {
     
     // Buffer to store accumulated transcript text across multiple utterances
     let accumulatedTranscript = "";
+    // Buffer containing ONLY clue-like segments (excludes chatter) for the LLM.
+    let clueTranscript = "";
     
     // Track when the screen was last cleared/reset to invalidate pending LLM results
     let lastResetTimestamp = 0;
@@ -98,8 +100,9 @@ class ExampleMentraOSApp extends AppServer {
             lastAnswerId = null; // Reset state so same answer can trigger again if needed
             lastProcessedLength = 0; // Reset length tracking
             accumulatedTranscript = ""; // Reset accumulated transcript
+            clueTranscript = ""; // Reset clue-only transcript
             lastResetTimestamp = Date.now(); // Mark the reset time
-        }, 3000); // 3 seconds
+        }, 10000); // 10 seconds
     };
 
     // Keep the display readable: show a sliding window of the latest characters.
@@ -116,8 +119,6 @@ class ExampleMentraOSApp extends AppServer {
      * @param isFinal - Whether the transcription is final
      */
     const handleTranscription = async (text: string, isFinal: boolean): Promise<void> => {
-      resetClearTimer(); // Reset timer whenever we hear something
-
       const showLiveTranscription = session.settings.get<boolean>('show_live_transcription', true);
       
       // Construct the full text with history. 
@@ -180,6 +181,7 @@ class ExampleMentraOSApp extends AppServer {
             if (fullText.toLowerCase().includes("for 10 points")) {
                 console.log("Detected 'For 10 points'. Resetting accumulated history.");
                 accumulatedTranscript = "";
+                clueTranscript = "";
                 // Also reset the processed length so the next question starts fresh
                 lastProcessedLength = 0;
             } else {
@@ -190,14 +192,24 @@ class ExampleMentraOSApp extends AppServer {
 
       if (!shouldProcess) return;
 
+      // Compute the new segment since last checkpoint BEFORE updating it.
+      const prevProcessedLength = lastProcessedLength;
+      const nextProcessedLength = isFinal ? fullText.length : currentSentenceEnd;
+      const recentSegment = fullText.slice(prevProcessedLength, nextProcessedLength).trim();
+
       // Update the checkpoint
-      lastProcessedLength = isFinal ? fullText.length : currentSentenceEnd;
+      lastProcessedLength = nextProcessedLength;
 
       // Process with QuizEngine immediately (no debounce) for real-time buzzing
       console.log(`Processing text for match (Reason: ${hasNewSentence ? 'New Sentence' : 'Final Segment'}, Length: ${fullText.length})...`);
       
       const processStartTime = Date.now();
-      const matchResult = await quizEngine.processText(fullText);
+      const matchResult = await quizEngine.processText(fullText, {
+          clueSoFar: clueTranscript,
+          recentSegment,
+          alreadyAnswered: Boolean(lastAnswerId),
+          lastAnswer: lastAnswerId,
+      });
 
       // Check if a reset occurred while we were awaiting the result
       if (lastResetTimestamp > processStartTime) {
@@ -207,17 +219,34 @@ class ExampleMentraOSApp extends AppServer {
 
       if (matchResult) {
         // Special control signal: clear transcript/history if the LLM says the input isn't a tossup at all.
-        if (matchResult.question.answer === '__RESET__' || matchResult.question.id === 'reset') {
+        if (matchResult.action === 'reset' || matchResult.question.answer === '__RESET__' || matchResult.question.id === 'reset') {
             console.log("Received RESET signal from QuizEngine; clearing transcript history.");
             lastAnswerId = null;
             lastProcessedLength = 0;
             accumulatedTranscript = "";
+            clueTranscript = "";
             lastResetTimestamp = Date.now();
             try {
                 session.layouts.showTextWall(" ");
             } catch (err) {
                 console.error("Error clearing display:", err);
             }
+            return;
+        }
+
+        // Ignore between-question chatter without extending the clear timer or polluting clueTranscript.
+        if (matchResult.action === 'chatter' || matchResult.question.answer === '__CHATTER__' || matchResult.question.id === 'chatter') {
+            console.log("Detected CHATTER segment; ignoring for clue accumulation.");
+            return;
+        }
+
+        // For clue-like text (even if we can't answer yet), keep the timer alive and accumulate clues.
+        if (matchResult.action === 'no_match') {
+            if (recentSegment) {
+                clueTranscript = clueTranscript ? `${clueTranscript} ${recentSegment}` : recentSegment;
+            }
+            resetClearTimer(); // keep clearing relative to last clue-like segment, not last speech
+            console.log("No match yet; accumulated more clue text.");
             return;
         }
 
@@ -234,13 +263,16 @@ class ExampleMentraOSApp extends AppServer {
             session.layouts.showDoubleTextWall(questionText, `Answer: ${matchResult.question.answer}`);
             console.log("Display updated successfully.");
             
-            // Keep the answer visible by resetting the clear timer
+            // Keep the answer visible by resetting the clear timer (not extended by CHATTER).
             resetClearTimer();
 
             } catch (err) {
                 console.error("Error updating display:", err);
             }
             
+            if (recentSegment) {
+                clueTranscript = clueTranscript ? `${clueTranscript} ${recentSegment}` : recentSegment;
+            }
             lastAnswerId = matchResult.question.answer;
         // } else {
         //     console.log(`Skipping duplicate answer: ${matchResult.question.answer}`);

@@ -3,6 +3,7 @@ import { Question } from '../data/questions';
 export interface MatchResult {
     question: Question;
     confidence: number;
+    action: 'answer' | 'no_match' | 'reset' | 'chatter';
 }
 
 export class QuizEngine {
@@ -48,9 +49,18 @@ export class QuizEngine {
     /**
      * Processes input text to find a matching trivia question using ChatGPT (OpenAI)
      * @param text The transcribed text or simulated input
-     * @returns The best matching result or null if no strong match found
+     * @param context Optional context about the streaming transcript
+     * @returns A structured action or null if skipped
      */
-    public async processText(text: string): Promise<MatchResult | null> {
+    public async processText(
+        text: string,
+        context?: {
+            clueSoFar?: string;
+            recentSegment?: string;
+            alreadyAnswered?: boolean;
+            lastAnswer?: string | null;
+        }
+    ): Promise<MatchResult | null> {
         // Ignore very short inputs to save API calls and reduce noise
         if (!text || text.trim().length < 10) return null;
         
@@ -78,14 +88,23 @@ Rules:
    - Ignore filler (uh/um), side comments, jokes, instructions, audience chatter, or off-topic sentences.
    - Then answer using ONLY the filtered clue text.
 4. Use the specific combination of named entities and facts in the filtered clue to identify the single best answer.
-5. If, after filtering, there is not enough clue signal to identify one answer with high confidence: output NO MATCH.
-6. If the input does not resemble a quiz bowl tossup clue at all (even after filtering), output RESET (this is used to clear transcript history).
-7. Only output RESET if you are absolutely certain that the input is not a quiz bowl tossup clue.
-
+5. The app will send you:
+   - ClueSoFar: previously accepted clue-like text (may be empty)
+   - RecentSegment: the newest sentence/segment that just arrived (may contain chatter)
+6. Classify RecentSegment:
+   - If RecentSegment is clearly unrelated chatter/logistics/reactions and NOT part of a tossup clue:
+     - If ClueSoFar is empty: output RESET (clear history)
+     - If ClueSoFar is non-empty: output CHATTER (ignore this segment but keep history)
+   - If RecentSegment is clue-like (even if incomplete): treat it as part of the tossup and proceed.
+7. If, after filtering and using ClueSoFar + RecentSegment, there is not enough clue signal to identify one answer with high confidence: output NO MATCH.
+8. Post-answer cleanup (use with caution):
+   - If you are told AlreadyAnswered: true and RecentSegment is clearly between-question chatter (and not the start of a new tossup), you MAY output RESET.
+   - Only do this if you are highly confident we're between questions; otherwise output CHATTER or NO MATCH.
 Output requirements (critical):
 - Output EXACTLY one line.
 - Either: NO MATCH
 - Or: RESET
+- Or: CHATTER
 - Or: ANSWER: <entity name>
 - Do NOT include reasoning, quotes, markdown, or extra text.
 
@@ -98,9 +117,20 @@ NO MATCH
 
 Clue: "Wait what did you say? haha yeah anyway let's go. Are we leaving?"
 RESET
+
+Clue: "This author wrote The Trial—wait what time is it?—and also wrote The Metamorphosis."
+ANSWER: Franz Kafka
 `;
 
-            const userPrompt = `Clue: "${text}"`;
+            const clueSoFar = (context?.clueSoFar ?? '').trim();
+            const recentSegment = (context?.recentSegment ?? '').trim();
+            const alreadyAnswered = context?.alreadyAnswered ? 'true' : 'false';
+            const lastAnswer = context?.lastAnswer ? String(context.lastAnswer) : '';
+            const userPrompt = `AlreadyAnswered: ${alreadyAnswered}
+LastAnswer: ${lastAnswer}
+ClueSoFar: "${clueSoFar}"
+RecentSegment: "${recentSegment}"
+FullTranscript: "${text}"`;
 
             // Use OpenAI Chat Completions for broad compatibility.
             // If the configured model isn't available, fall back to gpt-5.2 once.
@@ -164,10 +194,19 @@ RESET
             }
 
             // Parse reasoning and answer
-            const upper = contentText.toUpperCase();
-            if (upper === 'NO MATCH') return null;
+            const upper = contentText.trim().toUpperCase();
+            if (/^NO MATCH\b/.test(upper)) {
+                const question: Question = {
+                    id: 'no-match',
+                    category: 'Control',
+                    text,
+                    answer: '',
+                    keywords: [],
+                };
+                return { question, confidence: 0, action: 'no_match' };
+            }
 
-            if (upper === 'RESET') {
+            if (/^RESET\b/.test(upper)) {
                 const question: Question = {
                     id: 'reset',
                     category: 'Control',
@@ -175,7 +214,18 @@ RESET
                     answer: '__RESET__',
                     keywords: [],
                 };
-                return { question, confidence: 0 };
+                return { question, confidence: 0, action: 'reset' };
+            }
+
+            if (/^CHATTER\b/.test(upper)) {
+                const question: Question = {
+                    id: 'chatter',
+                    category: 'Control',
+                    text,
+                    answer: '__CHATTER__',
+                    keywords: [],
+                };
+                return { question, confidence: 0, action: 'chatter' };
             }
 
             let answerText = contentText;
@@ -201,7 +251,8 @@ RESET
 
             return {
                 question: question,
-                confidence: 10 // Arbitrary high score since the AI is confident
+                confidence: 10, // Arbitrary high score since the AI is confident
+                action: 'answer',
             };
 
         } catch (error) {

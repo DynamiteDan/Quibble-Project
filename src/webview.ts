@@ -16,16 +16,19 @@ export function setupExpressRoutes(server: AppServer): void {
   app.set('views', path.join(__dirname, 'views'));
 
   // Register a route for handling webview requests
-  app.get('/webview', (req: AuthenticatedRequest, res) => {
-    if (req.authUserId) {
+  const webviewHandler: express.RequestHandler = (req, res) => {
+    const authReq = req as unknown as AuthenticatedRequest;
+    if (authReq.authUserId) {
       // Render the webview template
       res.render('webview', {
-        userId: req.authUserId,
+        userId: authReq.authUserId,
       });
     } else {
       res.render('webview', {
         userId: undefined,
       });
     }
-  });
+  };
+
+  app.get('/webview', webviewHandler);
 }
