@@ -102,7 +102,7 @@ class ExampleMentraOSApp extends AppServer {
             accumulatedTranscript = ""; // Reset accumulated transcript
             clueTranscript = ""; // Reset clue-only transcript
             lastResetTimestamp = Date.now(); // Mark the reset time
-        }, 10000); // 10 seconds
+        }, 5000); // 5 seconds
     };
 
     // Keep the display readable: show a sliding window of the latest characters.
